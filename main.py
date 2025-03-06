@@ -495,6 +495,7 @@ def main_menu():
         else:
             print("Option Invalid. Choose an option from the menu above!")
             # continue
+        break
 
-main_menu()
+
 
