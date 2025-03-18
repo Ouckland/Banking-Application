@@ -1,15 +1,14 @@
 import sqlite3
 import hashlib
 import datetime
-from random import randrange
+from time import sleep
+from random import randint
 from string import ascii_letters
 from getpass import getpass
 
 
 
-transaction_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-my_conn = sqlite3.connect("bank_users.db")
+my_conn = sqlite3.connect("bank.db")
 my_cursor = my_conn.cursor()
 my_cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
@@ -19,7 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
     password TEXT NOT NULL,
     transaction_pin INTEGER NOT NULL,
     account_number INTEGER NOT NULL UNIQUE,
-    account_balance INTEGER NOT NULL
+    account_balance NUMERIC NOT NULL
 )
 """)
 my_cursor.execute("""
@@ -33,11 +32,11 @@ CREATE TABLE IF NOT EXISTS transaction_history (
 )""")
 
 def generate_transaction_id():
-    return randrange(111111111111111, 999999999999999)
+    return randint(111111111111111, 999999999999999)
 
 def register_user():
     def generate_acc_number():
-        return randrange(10001, 99999)
+        return randint(10000001, 99999999)
     
     print("***************Register User***************")
 
@@ -48,10 +47,12 @@ def register_user():
             print("Full name field cannot be left blank")
             continue
 
-        if not all(char in ascii_letters + " " for char in full_name):
-            print("Invalid character in full name!")
-            
-            continue
+        if not full_name.isalpha():
+            if " " in full_name:
+                pass
+            else:
+                print("Invalid character in full name!")
+                continue
         
         if len(full_name) < 4 or len(full_name) > 255:
             print("Invalid character length") 
@@ -64,12 +65,12 @@ def register_user():
             print("Username field cannot be left blank")
             continue
 
-        if len(username) < 3 or len(username) > 20:
+        if len(username) < 8 or len(username) > 20:
             print("Invalid character length for username")
             continue
         
-        if not all(char in ascii_letters + "0123456789_"for char in username):
-            print("Invalid character used!")
+        if not username.isalnum():
+            print("Invalid character used! Only letters, digits and underscore is allowed!")
             continue
         break
 
@@ -78,10 +79,16 @@ def register_user():
         if not password:
             print("Password field cannot be left blank")
             continue
+        if not password.isalnum():
+            print("Password must contain numbers and letters!")
+            continue
 
         confirm_password = getpass("Confirm password: ")
         if not confirm_password:
             print("Confirm Password field cannot be left blank")
+            continue
+        if not confirm_password.isalnum():
+            print("Password must contain numbers and letters!")
             continue
 
 
@@ -128,29 +135,42 @@ def register_user():
 
 
     while True:
-        initial_deposit = int(input("Enter the value you want to deposit: "))
-
-        if not initial_deposit:
-            print("Enter a valid amount")
-            continue
-        if not type(initial_deposit) == int:
-            print("Invalid Value!")
-            continue
-        if initial_deposit < 2000:
-            print("Minimum of 2000 naira to open an account")
-            continue
+        try:
+            initial_deposit = float(input("Enter the value you want to deposit: "))
+        except ValueError as e:
+            print("Invalid value: ", e)
+        else:
+            if not initial_deposit:
+                print("Enter a valid amount")
+                continue
+            
+            if initial_deposit < 2000:
+                print("Minimum of 2000 naira to open an account")
+                continue
 
         break
 
     try:
-        my_cursor.execute("""
-        INSERT INTO users (full_name, username, password, transaction_pin, account_number, account_balance) VALUES
-        (?, ?, ?, ?, ?, ?)
-        """, (full_name, username, hashed_password, hashed_transaction_pin, generate_acc_number(), initial_deposit))
-    except sqlite3.IntegrityError:
-        print("Username already exists")
-    else:
+        account_number_exists = my_cursor.execute("""SELECT account_number FROM users WHERE account_number = ? """, (generate_acc_number(),)).fetchone()
+        if account_number_exists is None:
+            my_cursor.execute("""
+            INSERT INTO users (full_name, username, password, transaction_pin, account_number, account_balance) VALUES
+            (?, ?, ?, ?, ?, ?)
+            """, (full_name, username, hashed_password, hashed_transaction_pin, generate_acc_number(), initial_deposit))
+        else:
+            new_account_number = generate_acc_number()
+            my_cursor.execute("""
+            INSERT INTO users (full_name, username, password, transaction_pin, account_number, account_balance) VALUES
+            (?, ?, ?, ?, ?, ?)
+            """, (full_name, username, hashed_password, hashed_transaction_pin, new_account_number, initial_deposit))
+
+    
+    except sqlite3.IntegrityError as e:
+        print("Username already exists", e)
+    
+    else:    
         my_conn.commit()
+        sleep(randint(1, 4))
         print("Sign Up was successful")
         user = my_cursor.execute("""
         SELECT account_number, username FROM users WHERE username = ?""", (username,)).fetchone()
@@ -167,7 +187,7 @@ def log_in():
             continue
         
         if not all(char in ascii_letters + "0123456789_"for char in username):
-            print("Invalid character used!")
+            print("Invalid character used! Only letters, digits and _ is allowed")
             continue
         break
 
@@ -186,12 +206,13 @@ def log_in():
     SELECT full_name, username FROM users WHERE username = ? AND password = ?
     """, (username, hashed_password)).fetchone()
 
-    
+    sleep(randint(1,4))
     if user is None:
         print("Invalid username or password!")
         log_in()
     else:    
         print(f"Log In Successful\nWelcome to the Dashboard, {user[1]}")
+        sleep(randint(1,4))
         login_menu(user)
                 
 
@@ -199,23 +220,22 @@ def deposit():
     while True:
         try:
             account_number = int(input("Enter your account number: ").strip())
-        except ValueError as e:
-            print(e)
-        else:
             if not account_number:
                 print("Enter your account number!")
                 continue
+        except ValueError as e:
+            print("Enter a valid digit", e)
+        else:
             break
-    my_cursor.execute("""SELECT * FROM users WHERE account_number = ?""", (account_number,))
-    user_data = my_cursor.fetchone()
+    user_data = my_cursor.execute("""SELECT * FROM users WHERE account_number = ?""", (account_number,)).fetchone()
     if user_data is None:
         print("Invalid Account number!")
     else:
         while True:
             try:
-                amount = int(input("Enter the amount you want to deposit: ").strip())
+                amount = float(input("Enter the amount you want to deposit: "))
             except ValueError as e:
-                print(e)
+                print("Value", e)
             else:
                 if not amount:
                     print("You have to enter a valid amount. Minimum of 1 naira")
@@ -227,88 +247,114 @@ def deposit():
                 if amount >= 100000000:
                     print("Max deposit is 99999990!")
                 else:
-                    my_cursor.execute("""
-                    UPDATE users
-                    SET 
-                    account_balance = account_balance + ?""", (amount,))
-                    my_cursor.execute("""
-                    INSERT INTO transaction_history(transaction_id, transaction_type, amount, account_number, transaction_time) VALUES (?,?,?,?,?)
-                                      """, (generate_transaction_id(), "Deposit", amount, account_number, transaction_time)) 
-                    my_conn.commit()
-                    print(f"{amount} Succesfully deposited!")
+                    while True:
+                        confirmation = input(f"Are you sure you want to deposit {amount} Naira into your account?\nYes or No: ").lower()
+                        if confirmation == "yes":
+                            my_cursor.execute("""
+                            UPDATE users
+                            SET 
+                            account_balance = account_balance + ?""", (amount,))
+                            transaction_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            transaction_id_exists = my_cursor.execute("""
+                            SELECT transaction_id FROM transaction_history WHERE transaction_id = ?""", (generate_transaction_id(),)).fetchone()
+                            if transaction_id_exists is None:
+
+                                my_cursor.execute("""
+                                INSERT INTO transaction_history(transaction_id, transaction_type, amount, account_number, transaction_time) VALUES (?,?,?,?,?)
+                                                """, (generate_transaction_id(), "Deposit", amount, account_number, transaction_time))  
+                    
+                            else:
+                                new_transaction_id = generate_transaction_id()
+                                my_cursor.execute("""
+                                INSERT INTO transaction_history(transaction_id, transaction_type, amount, account_number, transaction_time) VALUES (?,?,?,?,?)
+                                                """, (new_transaction_id, "Deposit", amount, account_number, transaction_time))
+                            my_conn.commit()
+                            sleep(randint(1,4))
+                            print(f"{amount} Naira Succesfully deposited!")
+                        elif confirmation == "no":
+                            pass
+                        else:
+                            continue
+                        break
                 break
 
-def withdraw():
+def withdraw(user):
+
     while True:
         try:
-            account_number = int(input("Enter your account number: ").strip())
+            amount = float(input("Enter the amount you want to withdraw: "))
         except ValueError as e:
             print(e)
         else:
-            if not account_number:
-                print("Enter your account number!")
+            if not amount:
+                print("You have to enter a valid amount. Minimum of 1 naira")
                 continue
-            break
-    my_cursor.execute("""SELECT * FROM users WHERE account_number = ?""", (account_number,))
-    user_data = my_cursor.fetchone()
-    if user_data is None:
-        print("Invalid Account number!")
-    else:
-        while True:
-            try:
-                amount = int(input("Enter the amount you want to withdraw: ").strip())
-            except ValueError as e:
-                print(e)
+            if amount < 10:
+                print("Minimum withdrawal is 10 naira!")
+                continue
+            account_balance = my_cursor.execute("""SELECT account_balance FROM users WHERE username = ?""", (user[1],)).fetchone()
+            if account_balance[0] <= amount:
+                print("Insufficient Funds Available!")
+                sleep(randint(1,4))
+                continue
             else:
-                if not amount:
-                    print("You have to enter a valid amount. Minimum of 1 naira")
-                    continue
-                if amount < 10:
-                    print("Minimum withdrawal is 10 naira!")
-                    continue
-                account_balance = my_cursor.execute("""SELECT account_balance FROM users WHERE account_number = ?""", (account_number,)).fetchone()
-                if account_balance[0] <= amount:
-                    print("Insufficient Funds Available!")
-                else:
-                    
 
-                    while True:
-                        transaction_pin = getpass("Enter your transaction pin: ")
-                        hashed_transaction_pin = hashlib.sha256(transaction_pin.encode()).hexdigest()
-                        pin_validity = my_cursor.execute("""SELECT account_number FROM users WHERE transaction_pin = ?""", (hashed_transaction_pin,)).fetchone()
-                        if pin_validity is None:
-                            print("Invalid Pin!Try again")
-                            tries -= 1
-                            continue
-                        break
-                    
-                    my_cursor.execute("""
-                    UPDATE users
-                    SET account_balance = account_balance - ?""", (amount,))
-                    my_cursor.execute("""
-                    INSERT INTO transaction_history(transaction_id, transaction_type, amount, account_number, transaction_time) VALUES (?,?,?,?,?)
-                                      """,(generate_transaction_id(), "Withdrawal", amount, account_number, transaction_time))
-                    my_conn.commit()
-                    print(f"{amount} Succesfully withdrawn!")
+                while True:
+                    transaction_pin = getpass("Enter your transaction pin: ")
+                    hashed_transaction_pin = hashlib.sha256(transaction_pin.encode()).hexdigest()
+                    pin_validity = my_cursor.execute("""SELECT account_number FROM users WHERE transaction_pin = ?""", (hashed_transaction_pin,)).fetchone()
+                    if pin_validity is None:
+                        print("Invalid Pin!Try again")
+                        continue
                     break
+                
+                
+                while True:
+                    confirmation = input(f"Are you sure you want to withdraw {amount} Naira from your account?\nYes or No: ").lower()
+                    if confirmation == "yes":
+                        my_cursor.execute("""
+                        UPDATE users
+                        SET account_balance = account_balance - ?""", (amount,))
+                        
 
-def balance_inquiry():
+                        transaction_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        transaction_id_exists = my_cursor.execute("""
+                        SELECT transaction_id FROM transaction_history WHERE transaction_id = ?""", (generate_transaction_id(),)).fetchone()
+                        if transaction_id_exists is None:
+                            account_number = my_cursor.execute("""
+                                SELECT account_number FROM users WHERE username = ?""", (user[1],)).fetchone()
+                            my_cursor.execute("""
+                            INSERT INTO transaction_history(transaction_id, transaction_type, amount, account_number, transaction_time) VALUES (?,?,?,?,?)
+                            """, (generate_transaction_id(), "Withdrawal", amount, account_number[0], transaction_time))  
+                        else:
+                            new_transaction_id = generate_transaction_id()
+                            my_cursor.execute("""
+                            INSERT INTO transaction_history(transaction_id, transaction_type, amount, account_number, transaction_time) VALUES (?,?,?,?,?)
+                            """, (new_transaction_id, "Withdrawal", amount, account_number[0], transaction_time))
+                        my_conn.commit()
+                        sleep(randint(1,5))
+                        print(f"{amount} Naira Succesfully withdrawn!")
+                    elif confirmation == "no":
+                        pass
+                    else:
+                        continue
+                    break
+            break
+
+def balance_inquiry(user):
     while True:
         transaction_pin = getpass("Enter your transaction pin: ")
         hashed_transaction_pin = hashlib.sha256(transaction_pin.encode()).hexdigest()
-        pin_data = my_cursor.execute("""SELECT account_balance FROM users WHERE transaction_pin = ?""", (hashed_transaction_pin,)).fetchone()
+        pin_data = my_cursor.execute("""SELECT account_balance FROM users WHERE (transaction_pin, username) = (?, ?)""", (hashed_transaction_pin, user[1])).fetchone()
         if pin_data is None:
             print("Invalid Pin!Try again")
             continue
         break
-    print(f"""Account Balance : {pin_data[0]}
-""")
+    sleep(randint(1,4))
+    print(f"""Account Balance : {pin_data[0]} Naira""")
                     
-    
-    
-    # my_cursor.execute(""""")
 
-def transaction_history():
+def transaction_history(user):
     while True:
         
         transaction_pin = (getpass("Enter transaction pin: "))
@@ -322,7 +368,7 @@ def transaction_history():
     hashed_transaction_pin = hashlib.sha256(transaction_pin.encode()).hexdigest()
     
     account_number = my_cursor.execute("""
-    SELECT account_number FROM users WHERE transaction_pin = ?""", (hashed_transaction_pin,)).fetchone()
+    SELECT account_number FROM users WHERE (transaction_pin, username) = (?, ?)""", (hashed_transaction_pin, user[1])).fetchone()
     if account_number is None:
        print("Account number not found!")
     else:
@@ -335,9 +381,10 @@ def transaction_history():
         
         else:
             for (id, type, amount, account_number, transaction_time) in transaction_history:
+                sleep(randint(1,4))
                 print(f"""Transaction ID: {id}
         Transaction type: {type}
-        Amount: {amount} naira
+        Amount: {amount} Naira
         Account Number: {account_number}
         Time: {transaction_time}
 
@@ -353,22 +400,23 @@ def account_details(user):
             print("Invalid Pin!Try again")
             continue
         break
+    sleep(randint(1,4))
     print(f"""Full name : {pin_data[1]}
 User name : {pin_data[2]}
 Account Number : {pin_data[5]}
-Account Balance : {pin_data[6]}
 """)
 
-def transfer():
+def transfer(user):
     while True:
         try:
-            recipient_account_number = int(input("Enter your account number: ").strip())
-        except ValueError as e:
-            print(e)
-        else:
+            recipient_account_number = int(input("Enter recipient account number: ").strip())
             if not recipient_account_number:
                 print("Enter your account number!")
                 continue
+        except ValueError as e:
+            print(e)
+        else:
+            
             while True:
         
                 transaction_pin = (getpass("Enter transaction pin: "))
@@ -380,7 +428,7 @@ def transfer():
             hashed_transaction_pin = hashlib.sha256(transaction_pin.encode()).hexdigest()
             
             account_number = my_cursor.execute("""
-            SELECT account_number FROM users WHERE transaction_pin = ?""", (hashed_transaction_pin,)).fetchone()
+            SELECT account_number FROM users WHERE (username, transaction_pin) = (?,?)""", (user[1], hashed_transaction_pin)).fetchone()
             if bool(account_number) is False:
                     print("The pin is incorrect!")
                     continue
@@ -400,7 +448,7 @@ def transfer():
 
             while True:
                 try:
-                    amount = int(input("Enter the amount you want to deposit: ").strip())
+                    amount = float(input("Enter the amount you want to deposit: "))
                 except ValueError as e:
                     print(e)
                 else:
@@ -412,31 +460,56 @@ def transfer():
                         continue
 
                     if amount >= 100000000:
-                        print("Max deposit is 99999990!")
+                        print("Max deposit is 99_999_990 naira!")
                     account_balance = my_cursor.execute("""SELECT account_balance FROM users WHERE account_number = ? """, (account_number[0],)).fetchone()
                     if account_balance[0] <= amount:
                         print("Insufficient Funds Available!")
 
                     else:
-                        my_cursor.execute(f"""
-                        UPDATE users
-                        SET account_balance = account_balance + ?
-                        WHERE account_number = {recipient_account_number}""", (amount,))
-                        my_cursor.execute(f"""
-                        UPDATE users
-                        SET account_balance = account_balance - ?
-                        WHERE account_number = ?""", (amount, account_number[0]))
-                        my_cursor.execute("""
-                        INSERT INTO transaction_history(transaction_id, transaction_type, amount, account_number, transaction_time) VALUES (?,?,?,?,?)
-                                        """, (generate_transaction_id(), "Transfer", amount, account_number[0], transaction_time)) 
-                        my_cursor.execute("""
-                        INSERT INTO transaction_history(transaction_id, transaction_type, amount, account_number, transaction_time) VALUES (?,?,?,?, ?)
-                                    """, (generate_transaction_id(), "Recieved Transfer", amount, recipient_account_number, transaction_time))
-                        my_conn.commit()
-                        print(f"{amount} Succesfull!")
-                        break
-        else:
-            print("Tranfer cancelled!")    
+                        while True:
+                            confirmation = input(f"Are you sure you want to transfer {amount} Naira to {user_data[0]}?\nYes or No: ").lower()
+                            if confirmation == "yes":
+                                
+                                my_cursor.execute(f"""
+                                UPDATE users
+                                SET account_balance = account_balance + ?
+                                WHERE account_number = ?""", (amount, recipient_account_number,))
+                                my_cursor.execute(f"""
+                                UPDATE users
+                                SET account_balance = account_balance - ?
+                                WHERE account_number = ?""", (amount, account_number[0]))
+                                transaction_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                
+                                transaction_id_exists = my_cursor.execute("""
+                                SELECT transaction_id FROM transaction_history WHERE transaction_id = ?""", (generate_transaction_id(),)).fetchone()
+                                if transaction_id_exists is None:
+                                    my_cursor.execute("""
+                                    INSERT INTO transaction_history(transaction_id, transaction_type, amount, account_number, transaction_time) VALUES (?,?,?,?,?)
+                                    """, (generate_transaction_id(), "Transfer", amount, account_number[0], transaction_time)) 
+                                
+                                    my_cursor.execute("""
+                                    INSERT INTO transaction_history(transaction_id, transaction_type, amount, account_number, transaction_time) VALUES (?,?,?,?, ?)
+                                                """, (generate_transaction_id(), "Recieved Transfer", amount, recipient_account_number, transaction_time))
+                                else:
+                                    new_transaction_id = generate_transaction_id()
+                                    my_cursor.execute("""
+                                    INSERT INTO transaction_history(transaction_id, transaction_type, amount, account_number, transaction_time) VALUES (?,?,?,?,?)
+                                    """, (new_transaction_id, "Transfer", amount, account_number[0], transaction_time)) 
+                                
+                                    my_cursor.execute("""
+                                    INSERT INTO transaction_history(transaction_id, transaction_type, amount, account_number, transaction_time) VALUES (?,?,?,?, ?)
+                                                """, (new_transaction_id, "Recieved Transfer", amount, recipient_account_number, transaction_time))
+                                my_conn.commit()
+                                sleep(randint(1,4))
+                                print(f"{amount} Naira transferred Succesfully to {user_data[0]}!")
+                            elif confirmation == "no":
+                                pass
+                            else:
+                                continue
+                            break
+                break
+            else:
+                print("Tranfer cancelled!")    
 
 
 
@@ -453,16 +526,17 @@ def login_menu(user):
     while True:
         print(login_menu)
         choice = input("Choose an option from the menu above: ").strip()
+        sleep(randint(1,4))
         if choice == "1":
             deposit()
         elif choice == "2":
-            withdraw()
+            withdraw(user)
         elif choice == "3":
-            balance_inquiry()
+            balance_inquiry(user)
         elif choice == "4":
-            transaction_history()
+            transaction_history(user)
         elif choice == "5":
-            transfer()
+            transfer(user)
         elif choice == "6":
             account_details(user)
             
@@ -500,3 +574,4 @@ def main_menu():
 
 
 main_menu()
+60923069
