@@ -1,4 +1,4 @@
-# 💳 Banking Application (Bank of Astute People)
+# 💳 Banking Application
 
 A simple command-line banking application built using Python and SQLite. This project simulates core banking features such as account registration, login, deposit, withdrawal, transfers, and transaction history management — all secured with hashed passwords and PINs.
 
